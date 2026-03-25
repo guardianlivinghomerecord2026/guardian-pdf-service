@@ -1,56 +1,44 @@
 import express from "express";
-import puppeteer from "puppeteer";
+import puppeteer from "puppeteer-core";
+import chromium from "@sparticuz/chromium";
 
 const app = express();
-
-// Bigger limit for long reports with many images/styles
-app.use(express.json({ limit: "50mb" }));
-
 const PORT = process.env.PORT || 10000;
 
+app.use(express.json({ limit: "50mb" }));
+
 app.get("/health", (_req, res) => {
-  res.status(200).json({ ok: true, service: "guardian-pdf-service" });
+  res.status(200).json({
+    ok: true,
+    service: "guardian-pdf-service"
+  });
 });
 
-app.post("/generate-pdf", async (req, res) => {
+async function launchBrowser() {
+  const executablePath = await chromium.executablePath();
+
+  return puppeteer.launch({
+    args: chromium.args,
+    defaultViewport: chromium.defaultViewport,
+    executablePath,
+    headless: chromium.headless,
+    protocolTimeout: 120000
+  });
+}
+
+async function buildPdfFromHtml(html) {
   let browser;
 
   try {
-    const { html } = req.body || {};
-
-    if (!html || typeof html !== "string") {
-      return res.status(400).json({ error: "Missing html payload" });
-    }
-
-    console.log("PDF request received. HTML length:", html.length);
-
-    browser = await puppeteer.launch({
-      headless: true,
-      protocolTimeout: 120000,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu",
-        "--font-render-hinting=none"
-      ]
-    });
-
+    browser = await launchBrowser();
     const page = await browser.newPage();
 
-    await page.setViewport({
-      width: 1200,
-      height: 1600,
-      deviceScaleFactor: 1
-    });
-
-    // Better console visibility from inside the page
     page.on("console", (msg) => {
       console.log("PAGE LOG:", msg.text());
     });
 
     page.on("pageerror", (err) => {
-      console.error("PAGE ERROR:", err.message);
+      console.error("PAGE ERROR:", err?.message || err);
     });
 
     page.on("requestfailed", (request) => {
@@ -61,6 +49,12 @@ app.post("/generate-pdf", async (req, res) => {
       );
     });
 
+    await page.setViewport({
+      width: 1200,
+      height: 1600,
+      deviceScaleFactor: 1
+    });
+
     await page.setContent(html, {
       waitUntil: ["domcontentloaded", "networkidle0"],
       timeout: 120000
@@ -68,7 +62,6 @@ app.post("/generate-pdf", async (req, res) => {
 
     await page.emulateMediaType("print");
 
-    // Wait for images + fonts inside the rendered document
     await page.evaluate(async () => {
       const images = Array.from(document.images || []);
       await Promise.all(
@@ -99,7 +92,33 @@ app.post("/generate-pdf", async (req, res) => {
       timeout: 120000
     });
 
-    console.log("PDF generated successfully. Bytes:", pdf.length);
+    return pdf;
+  } finally {
+    if (browser) {
+      try {
+        await browser.close();
+      } catch (err) {
+        console.error("BROWSER CLOSE ERROR:", err?.message || err);
+      }
+    }
+  }
+}
+
+app.post("/generate-pdf", async (req, res) => {
+  try {
+    const { html } = req.body || {};
+
+    if (!html || typeof html !== "string") {
+      return res.status(400).json({
+        error: "Missing html payload"
+      });
+    }
+
+    console.log("PDF REQUEST RECEIVED. HTML LENGTH:", html.length);
+
+    const pdf = await buildPdfFromHtml(html);
+
+    console.log("PDF GENERATED SUCCESSFULLY. BYTES:", pdf.length);
 
     res.set({
       "Content-Type": "application/pdf",
@@ -109,47 +128,40 @@ app.post("/generate-pdf", async (req, res) => {
 
     return res.send(pdf);
   } catch (err) {
-    console.error("PDF generation failed:", err);
+    console.error("PDF GENERATION FAILED:", err?.stack || err);
     return res.status(500).json({
       error: "PDF generation failed"
     });
-  } finally {
-    if (browser) {
-      try {
-        await browser.close();
-      } catch (closeErr) {
-        console.error("Browser close error:", closeErr);
-      }
-    }
   }
 });
 
-// Small test route to prove Puppeteer itself works even without your app HTML
 app.get("/test-pdf", async (_req, res) => {
-  let browser;
-
   try {
-    browser = await puppeteer.launch({
-      headless: true,
-      protocolTimeout: 120000,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu"
-      ]
-    });
-
-    const page = await browser.newPage();
-
-    await page.setContent(`
+    const html = `
+      <!doctype html>
       <html>
         <head>
+          <meta charset="utf-8" />
+          <title>Guardian PDF Test</title>
           <style>
-            @page { size: letter; margin: 12mm; }
-            body { font-family: Arial, sans-serif; }
+            @page {
+              size: Letter;
+              margin: 12mm;
+            }
+
+            body {
+              font-family: Arial, sans-serif;
+              color: #111827;
+              background: #ffffff;
+            }
+
+            h1 {
+              margin-bottom: 16px;
+            }
+
             .box {
-              border: 1px solid #333;
+              border: 1px solid #374151;
+              border-radius: 8px;
               padding: 16px;
               margin-bottom: 12px;
               break-inside: avoid;
@@ -159,38 +171,30 @@ app.get("/test-pdf", async (_req, res) => {
         </head>
         <body>
           <h1>Guardian PDF Test</h1>
-          <div class="box">If you can download this PDF, Puppeteer is working on Render.</div>
-          <div class="box">Next step is debugging your report HTML/assets if the main route still fails.</div>
+          <div class="box">
+            If this downloads as a proper PDF, Puppeteer is working on Render.
+          </div>
+          <div class="box">
+            Next step is testing your real inspection report HTML through /generate-pdf.
+          </div>
         </body>
       </html>
-    `, {
-      waitUntil: ["domcontentloaded", "networkidle0"],
-      timeout: 120000
-    });
+    `;
 
-    await page.emulateMediaType("print");
-
-    const pdf = await page.pdf({
-      format: "Letter",
-      printBackground: true,
-      preferCSSPageSize: true
-    });
+    const pdf = await buildPdfFromHtml(html);
 
     res.set({
       "Content-Type": "application/pdf",
-      "Content-Disposition": 'attachment; filename="guardian-test.pdf"'
+      "Content-Disposition": 'attachment; filename="guardian-test.pdf"',
+      "Cache-Control": "no-store"
     });
 
     return res.send(pdf);
   } catch (err) {
-    console.error("Test PDF failed:", err);
-    return res.status(500).json({ error: "Test PDF failed" });
-  } finally {
-    if (browser) {
-      try {
-        await browser.close();
-      } catch {}
-    }
+    console.error("TEST PDF FAILED:", err?.stack || err);
+    return res.status(500).json({
+      error: "Test PDF failed"
+    });
   }
 });
 
