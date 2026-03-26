@@ -60,16 +60,30 @@ async function buildPdf(html) {
       waitUntil: "networkidle0"
     });
 
-    const pdf = await page.pdf({
-      format: "Letter",
-      printBackground: true,
-      margin: {
-        top: "10mm",
-        bottom: "20mm",
-        left: "8mm",
-        right: "8mm"
-      }
-    });
+   const pdf = await page.pdf({
+  format: "Letter",
+  printBackground: true,
+  displayHeaderFooter: true,
+
+  headerTemplate: `
+    <div style="width:100%; font-size:8px; color:#6b7280; padding:0 10mm;">
+      <div style="display:flex; justify-content:space-between;">
+        <div>198 Country Club Drive</div>
+        <div>Guardian Living Home Record</div>
+        <div>Prepared for: Jeremy Tresler</div>
+      </div>
+    </div>
+  `,
+
+  footerTemplate: `<div></div>`,
+
+  margin: {
+    top: "20mm",
+    right: "8mm",
+    bottom: "20mm",
+    left: "8mm"
+  }
+});
 
     return await addPageNumbers(pdf);
   } finally {
