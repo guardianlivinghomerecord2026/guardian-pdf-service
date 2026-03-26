@@ -33,22 +33,6 @@ async function buildPdfFromHtml(html, pdfOptions = {}) {
     browser = await launchBrowser();
     const page = await browser.newPage();
 
-    page.on("console", (msg) => {
-      console.log("PAGE LOG:", msg.text());
-    });
-
-    page.on("pageerror", (err) => {
-      console.error("PAGE ERROR:", err?.message || err);
-    });
-
-    page.on("requestfailed", (request) => {
-      console.warn(
-        "REQUEST FAILED:",
-        request.url(),
-        request.failure()?.errorText || "unknown"
-      );
-    });
-
     await page.setViewport({
       width: 1200,
       height: 1600,
@@ -62,6 +46,7 @@ async function buildPdfFromHtml(html, pdfOptions = {}) {
 
     await page.emulateMediaType("print");
 
+    // Wait for images & fonts
     await page.evaluate(async () => {
       const images = Array.from(document.images || []);
       await Promise.all(
@@ -83,20 +68,38 @@ async function buildPdfFromHtml(html, pdfOptions = {}) {
       format: "Letter",
       printBackground: true,
       preferCSSPageSize: false,
-      displayHeaderFooter: Boolean(pdfOptions.displayHeaderFooter),
-      headerTemplate:
-        pdfOptions.headerTemplate ||
-        `<div style="width:100%; font-size:8px; padding:0 8mm; color:#6b7280; text-align:center;"></div>`,
-      footerTemplate:
-        pdfOptions.footerTemplate ||
-        `<div style="width:100%; font-size:8px; padding:0 8mm; color:#6b7280; text-align:center;"></div>`,
-      margin:
-        pdfOptions.margin || {
-          top: "20mm",
-          right: "8mm",
-          bottom: "20mm",
-          left: "8mm"
-        },
+
+      displayHeaderFooter: true,
+
+      headerTemplate: `
+        <div style="width:100%; font-size:8px; padding:0 8mm; color:#6b7280;">
+          <div style="display:flex; justify-content:space-between; width:100%;">
+            <span>198 Country Club Drive</span>
+            <span>Guardian Living Home Record</span>
+            <span>Prepared for: Jeremy Tresler</span>
+          </div>
+        </div>
+      `,
+
+      footerTemplate: `
+        <div style="width:100%; font-size:8px; padding:0 8mm; color:#6b7280;">
+          <div style="display:flex; justify-content:space-between; width:100%;">
+            <span>J&H Fixall</span>
+            <span>Confidential Property Report</span>
+            <span>
+              Page <span class="pageNumber"></span> of <span class="totalPages"></span>
+            </span>
+          </div>
+        </div>
+      `,
+
+      margin: {
+        top: "20mm",
+        right: "8mm",
+        bottom: "20mm",
+        left: "8mm"
+      },
+
       timeout: 120000
     });
 
@@ -114,7 +117,7 @@ async function buildPdfFromHtml(html, pdfOptions = {}) {
 
 app.post("/generate-pdf", async (req, res) => {
   try {
-    const { html, pdfOptions = {} } = req.body || {};
+    const { html } = req.body || {};
 
     if (!html || typeof html !== "string") {
       return res.status(400).json({
@@ -123,14 +126,8 @@ app.post("/generate-pdf", async (req, res) => {
     }
 
     console.log("PDF REQUEST RECEIVED. HTML LENGTH:", html.length);
-    console.log("PDF OPTIONS RECEIVED:", {
-      displayHeaderFooter: pdfOptions.displayHeaderFooter || false,
-      hasHeaderTemplate: Boolean(pdfOptions.headerTemplate),
-      hasFooterTemplate: Boolean(pdfOptions.footerTemplate),
-      margin: pdfOptions.margin || null
-    });
 
-    const pdf = await buildPdfFromHtml(html, pdfOptions);
+    const pdf = await buildPdfFromHtml(html);
 
     console.log("PDF GENERATED SUCCESSFULLY. BYTES:", pdf.length);
 
@@ -145,91 +142,6 @@ app.post("/generate-pdf", async (req, res) => {
     console.error("PDF GENERATION FAILED:", err?.stack || err);
     return res.status(500).json({
       error: "PDF generation failed"
-    });
-  }
-});
-
-app.get("/test-pdf", async (_req, res) => {
-  try {
-    const html = `
-      <!doctype html>
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <title>Guardian PDF Test</title>
-          <style>
-            @page {
-              size: Letter;
-              margin: 12mm;
-            }
-
-            body {
-              font-family: Arial, sans-serif;
-              color: #111827;
-              background: #ffffff;
-            }
-
-            h1 {
-              margin-bottom: 16px;
-            }
-
-            .box {
-              border: 1px solid #374151;
-              border-radius: 8px;
-              padding: 16px;
-              margin-bottom: 12px;
-              break-inside: avoid;
-              page-break-inside: avoid;
-            }
-          </style>
-        </head>
-        <body>
-          <h1>Guardian PDF Test</h1>
-          <div class="box">
-            If this downloads as a proper PDF, Puppeteer is working on Render.
-          </div>
-          <div class="box">
-            Next step is testing your real inspection report HTML through /generate-pdf.
-          </div>
-        </body>
-      </html>
-    `;
-
-    const pdf = await buildPdfFromHtml(html, {
-      displayHeaderFooter: true,
-      headerTemplate: `
-        <div style="width:100%; font-size:8px; padding:0 8mm; color:#6b7280; display:flex; justify-content:space-between;">
-          <span>198 Country Club Drive</span>
-          <span>Guardian Living Home Record</span>
-          <span>Prepared for: Jeremy Tresler</span>
-        </div>
-      `,
-      footerTemplate: `
-        <div style="width:100%; font-size:8px; padding:0 8mm; color:#6b7280; display:flex; justify-content:space-between;">
-          <span>J&H Fixall</span>
-          <span>Confidential Property Report</span>
-          <span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span>
-        </div>
-      `,
-      margin: {
-        top: "20mm",
-        right: "8mm",
-        bottom: "20mm",
-        left: "8mm"
-      }
-    });
-
-    res.set({
-      "Content-Type": "application/pdf",
-      "Content-Disposition": 'attachment; filename="guardian-test.pdf"',
-      "Cache-Control": "no-store"
-    });
-
-    return res.send(pdf);
-  } catch (err) {
-    console.error("TEST PDF FAILED:", err?.stack || err);
-    return res.status(500).json({
-      error: "Test PDF failed"
     });
   }
 });
