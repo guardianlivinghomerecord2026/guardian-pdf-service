@@ -33,7 +33,6 @@ async function addPageNumbers(pdfBytes) {
     const { width } = page.getSize();
     const text = `J&H Fixall | Confidential Property Report | Page ${i + 1} of ${totalPages}`;
     const size = 8;
-
     const textWidth = font.widthOfTextAtSize(text, size);
 
     page.drawText(text, {
@@ -60,30 +59,27 @@ async function buildPdf(html) {
       waitUntil: "networkidle0"
     });
 
-   const pdf = await page.pdf({
-  format: "Letter",
-  printBackground: true,
-  displayHeaderFooter: true,
-
-  headerTemplate: `
-    <div style="width:100%; font-size:8px; color:#6b7280; padding:0 10mm;">
-      <div style="display:flex; justify-content:space-between;">
-        <div>198 Country Club Drive</div>
-        <div>Guardian Living Home Record</div>
-        <div>Prepared for: Jeremy Tresler</div>
-      </div>
-    </div>
-  `,
-
-  footerTemplate: `<div></div>`,
-
-  margin: {
-    top: "20mm",
-    right: "8mm",
-    bottom: "20mm",
-    left: "8mm"
-  }
-});
+    const pdf = await page.pdf({
+      format: "Letter",
+      printBackground: true,
+      displayHeaderFooter: true,
+      headerTemplate: `
+        <div style="width:100%; font-size:8px; color:#6b7280; padding:0 10mm;">
+          <div style="display:flex; justify-content:space-between;">
+            <div>198 Country Club Drive</div>
+            <div>Guardian Living Home Record</div>
+            <div>Prepared for: Jeremy Tresler</div>
+          </div>
+        </div>
+      `,
+      footerTemplate: `<div></div>`,
+      margin: {
+        top: "20mm",
+        right: "8mm",
+        bottom: "20mm",
+        left: "8mm"
+      }
+    });
 
     return await addPageNumbers(pdf);
   } finally {
@@ -91,25 +87,53 @@ async function buildPdf(html) {
   }
 }
 
+app.post("/generate-pdf", async (req, res) => {
+  try {
+    const { html } = req.body || {};
+
+    if (!html || typeof html !== "string") {
+      return res.status(400).json({ error: "Missing html payload" });
+    }
+
+    const pdf = await buildPdf(html);
+
+    res.set({
+      "Content-Type": "application/pdf",
+      "Content-Disposition": 'attachment; filename="inspection-report.pdf"',
+      "Cache-Control": "no-store"
+    });
+
+    return res.send(pdf);
+  } catch (err) {
+    console.error("PDF GENERATION FAILED:", err?.stack || err);
+    return res.status(500).json({ error: "PDF generation failed" });
+  }
+});
+
 app.get("/test-pdf", async (_req, res) => {
-  const html = `
-    <html>
-      <body style="font-family: Arial; padding:20px;">
-        <h1>Page 1</h1>
-        <div style="height:1200px;"></div>
-        <h1>Page 2</h1>
-      </body>
-    </html>
-  `;
+  try {
+    const html = `
+      <html>
+        <body style="font-family: Arial; padding:20px;">
+          <h1>Page 1</h1>
+          <div style="height:1200px;"></div>
+          <h1>Page 2</h1>
+        </body>
+      </html>
+    `;
 
-  const pdf = await buildPdf(html);
+    const pdf = await buildPdf(html);
 
-  res.set({
-    "Content-Type": "application/pdf",
-    "Content-Disposition": "attachment; filename=test.pdf"
-  });
+    res.set({
+      "Content-Type": "application/pdf",
+      "Content-Disposition": "attachment; filename=test.pdf"
+    });
 
-  res.send(pdf);
+    return res.send(pdf);
+  } catch (err) {
+    console.error("TEST PDF FAILED:", err?.stack || err);
+    return res.status(500).send("Test PDF failed");
+  }
 });
 
 app.listen(PORT, () => {
