@@ -26,7 +26,7 @@ async function launchBrowser() {
   });
 }
 
-async function buildPdfFromHtml(html) {
+async function buildPdfFromHtml(html, pdfOptions = {}) {
   let browser;
 
   try {
