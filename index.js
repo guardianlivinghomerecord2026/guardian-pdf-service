@@ -82,13 +82,21 @@ async function buildPdfFromHtml(html, pdfOptions = {}) {
     const pdf = await page.pdf({
       format: "Letter",
       printBackground: true,
-      preferCSSPageSize: true,
-      margin: {
-        top: "10mm",
-        right: "8mm",
-        bottom: "14mm",
-        left: "8mm"
-      },
+      preferCSSPageSize: false,
+      displayHeaderFooter: Boolean(pdfOptions.displayHeaderFooter),
+      headerTemplate:
+        pdfOptions.headerTemplate ||
+        `<div style="width:100%; font-size:8px; padding:0 8mm; color:#6b7280; text-align:center;"></div>`,
+      footerTemplate:
+        pdfOptions.footerTemplate ||
+        `<div style="width:100%; font-size:8px; padding:0 8mm; color:#6b7280; text-align:center;"></div>`,
+      margin:
+        pdfOptions.margin || {
+          top: "20mm",
+          right: "8mm",
+          bottom: "20mm",
+          left: "8mm"
+        },
       timeout: 120000
     });
 
@@ -106,7 +114,7 @@ async function buildPdfFromHtml(html, pdfOptions = {}) {
 
 app.post("/generate-pdf", async (req, res) => {
   try {
-    const { html } = req.body || {};
+    const { html, pdfOptions = {} } = req.body || {};
 
     if (!html || typeof html !== "string") {
       return res.status(400).json({
@@ -115,8 +123,14 @@ app.post("/generate-pdf", async (req, res) => {
     }
 
     console.log("PDF REQUEST RECEIVED. HTML LENGTH:", html.length);
+    console.log("PDF OPTIONS RECEIVED:", {
+      displayHeaderFooter: pdfOptions.displayHeaderFooter || false,
+      hasHeaderTemplate: Boolean(pdfOptions.headerTemplate),
+      hasFooterTemplate: Boolean(pdfOptions.footerTemplate),
+      margin: pdfOptions.margin || null
+    });
 
-    const pdf = await buildPdfFromHtml(html);
+    const pdf = await buildPdfFromHtml(html, pdfOptions);
 
     console.log("PDF GENERATED SUCCESSFULLY. BYTES:", pdf.length);
 
@@ -181,7 +195,29 @@ app.get("/test-pdf", async (_req, res) => {
       </html>
     `;
 
-    const pdf = await buildPdfFromHtml(html);
+    const pdf = await buildPdfFromHtml(html, {
+      displayHeaderFooter: true,
+      headerTemplate: `
+        <div style="width:100%; font-size:8px; padding:0 8mm; color:#6b7280; display:flex; justify-content:space-between;">
+          <span>198 Country Club Drive</span>
+          <span>Guardian Living Home Record</span>
+          <span>Prepared for: Jeremy Tresler</span>
+        </div>
+      `,
+      footerTemplate: `
+        <div style="width:100%; font-size:8px; padding:0 8mm; color:#6b7280; display:flex; justify-content:space-between;">
+          <span>J&H Fixall</span>
+          <span>Confidential Property Report</span>
+          <span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span>
+        </div>
+      `,
+      margin: {
+        top: "20mm",
+        right: "8mm",
+        bottom: "20mm",
+        left: "8mm"
+      }
+    });
 
     res.set({
       "Content-Type": "application/pdf",
