@@ -31,13 +31,13 @@ async function addPageNumbers(pdfBytes) {
 
   pages.forEach((page, i) => {
     const { width } = page.getSize();
-    const text = `Page ${i + 1} of ${totalPages}`;
+    const text = `J&H Fixall | Confidential Property Report | Page ${i + 1} of ${totalPages}`;
     const size = 8;
 
     const textWidth = font.widthOfTextAtSize(text, size);
 
     page.drawText(text, {
-      x: width - textWidth - 20,
+      x: (width - textWidth) / 2,
       y: 12,
       size,
       font,
