@@ -49,8 +49,8 @@ async function addPageNumbers(pdfBytes) {
     });
   });
 
-  return await pdfDoc.save();
-}
+ const bytes = await pdfDoc.save();
+return Buffer.from(bytes);
 
 async function buildPdfFromHtml(html) {
   let browser;
