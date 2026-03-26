@@ -1,6 +1,7 @@
 import express from "express";
 import puppeteer from "puppeteer-core";
 import chromium from "@sparticuz/chromium";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -24,6 +25,31 @@ async function launchBrowser() {
     headless: chromium.headless,
     protocolTimeout: 120000
   });
+}
+
+async function addPageNumbers(pdfBytes) {
+  const pdfDoc = await PDFDocument.load(pdfBytes);
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+  const pages = pdfDoc.getPages();
+  const totalPages = pages.length;
+
+  pages.forEach((page, index) => {
+    const { width } = page.getSize();
+    const text = `Page ${index + 1} of ${totalPages}`;
+    const fontSize = 8;
+    const textWidth = font.widthOfTextAtSize(text, fontSize);
+
+    page.drawText(text, {
+      x: width - textWidth - 24,
+      y: 14,
+      size: fontSize,
+      font,
+      color: rgb(0.42, 0.42, 0.42)
+    });
+  });
+
+  return await pdfDoc.save();
 }
 
 async function buildPdfFromHtml(html) {
@@ -88,7 +114,7 @@ async function buildPdfFromHtml(html) {
       footerTemplate: `
         <div style="width:100%; font-size:8px; color:#6b7280; padding:0 8mm;">
           <div style="width:100%; text-align:center;">
-            Page <span class="pageNumber"></span> of <span class="totalPages"></span>
+            Confidential Property Report
           </div>
         </div>
       `,
@@ -101,7 +127,7 @@ async function buildPdfFromHtml(html) {
       timeout: 120000
     });
 
-    return pdf;
+    return await addPageNumbers(pdf);
   } finally {
     if (browser) {
       try {
@@ -184,13 +210,9 @@ app.get("/test-pdf", async (_req, res) => {
         </head>
         <body>
           <h1>Guardian PDF Page Number Test</h1>
-          <div class="box">
-            This should show page numbers in the footer.
-          </div>
+          <div class="box">This should show page numbers in the bottom-right corner.</div>
           <div class="spacer"></div>
-          <div class="box">
-            This should be page 2.
-          </div>
+          <div class="box">This should be page 2.</div>
         </body>
       </html>
     `;
