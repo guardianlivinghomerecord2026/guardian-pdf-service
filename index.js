@@ -48,7 +48,7 @@ async function addPageNumbers(pdfBytes) {
   return Buffer.from(bytes);
 }
 
-async function buildPdf(html) {
+async function buildPdf(html, headerTemplate, footerTemplate) {
   let browser;
 
   try {
@@ -63,16 +63,21 @@ async function buildPdf(html) {
       format: "Letter",
       printBackground: true,
       displayHeaderFooter: true,
-      headerTemplate: `
+
+      headerTemplate:
+        headerTemplate ||
+        `
         <div style="width:100%; font-size:8px; color:#6b7280; padding:0 10mm;">
           <div style="display:flex; justify-content:space-between;">
-            <div>198 Country Club Drive</div>
+            <div>Property Address Not Available</div>
             <div>Guardian Living Home Record</div>
-            <div>Prepared for: Jeremy Tresler</div>
+            <div>Prepared for: Client</div>
           </div>
         </div>
-      `,
-      footerTemplate: `<div></div>`,
+        `,
+
+      footerTemplate: footerTemplate || `<div></div>`,
+
       margin: {
         top: "20mm",
         right: "8mm",
@@ -89,13 +94,13 @@ async function buildPdf(html) {
 
 app.post("/generate-pdf", async (req, res) => {
   try {
-    const { html } = req.body || {};
+    const { html, headerTemplate, footerTemplate } = req.body || {};
 
     if (!html || typeof html !== "string") {
       return res.status(400).json({ error: "Missing html payload" });
     }
 
-    const pdf = await buildPdf(html);
+    const pdf = await buildPdf(html, headerTemplate, footerTemplate);
 
     res.set({
       "Content-Type": "application/pdf",
@@ -122,7 +127,19 @@ app.get("/test-pdf", async (_req, res) => {
       </html>
     `;
 
-    const pdf = await buildPdf(html);
+    const pdf = await buildPdf(
+      html,
+      `
+      <div style="width:100%; font-size:8px; color:#6b7280; padding:0 10mm;">
+        <div style="display:flex; justify-content:space-between;">
+          <div>198 Country Club Dr, Grass Valley, CA</div>
+          <div>Guardian Living Home Record</div>
+          <div>Prepared for: Jeremy Tresler</div>
+        </div>
+      </div>
+      `,
+      `<div></div>`
+    );
 
     res.set({
       "Content-Type": "application/pdf",
