@@ -70,10 +70,28 @@ async function buildPdfFromHtml(html, pdfOptions = {}) {
       displayHeaderFooter: Boolean(pdfOptions.displayHeaderFooter),
       headerTemplate:
         pdfOptions.headerTemplate ||
-        `<div style="width:100%; font-size:8px; padding:0 8mm; color:#6b7280; text-align:center;"></div>`,
+        `
+        <div style="width:100%; font-size:8px; color:#6b7280; padding:0 8mm;">
+          <div style="width:100%; display:flex; justify-content:space-between;">
+            <div>198 Country Club Drive</div>
+            <div>Guardian Living Home Record</div>
+            <div>Prepared for: Jeremy Tresler</div>
+          </div>
+        </div>
+        `,
       footerTemplate:
         pdfOptions.footerTemplate ||
-        `<div style="width:100%; font-size:8px; padding:0 8mm; color:#6b7280; text-align:center;"></div>`,
+        `
+        <div style="width:100%; font-size:8px; color:#6b7280; padding:0 8mm;">
+          <div style="width:100%; position:relative; height:12px;">
+            <div style="position:absolute; left:0;">J&amp;H Fixall</div>
+            <div style="position:absolute; left:50%; transform:translateX(-50%);">Confidential Property Report</div>
+            <div style="position:absolute; right:0;">
+              Page <span class="pageNumber"></span> of <span class="totalPages"></span>
+            </div>
+          </div>
+        </div>
+        `,
       margin:
         pdfOptions.margin || {
           top: "20mm",
@@ -155,20 +173,22 @@ app.get("/test-pdf", async (_req, res) => {
     const pdf = await buildPdfFromHtml(html, {
       displayHeaderFooter: true,
       headerTemplate: `
-        <div style="width:100%; font-size:8px; padding:0 8mm; color:#6b7280;">
-          <div style="display:flex; justify-content:space-between; width:100%;">
-            <span>198 Country Club Drive</span>
-            <span>Guardian Living Home Record</span>
-            <span>Prepared for: Jeremy Tresler</span>
+        <div style="width:100%; font-size:8px; color:#6b7280; padding:0 8mm;">
+          <div style="width:100%; display:flex; justify-content:space-between;">
+            <div>198 Country Club Drive</div>
+            <div>Guardian Living Home Record</div>
+            <div>Prepared for: Jeremy Tresler</div>
           </div>
         </div>
       `,
       footerTemplate: `
-        <div style="width:100%; font-size:8px; padding:0 8mm; color:#6b7280;">
-          <div style="display:flex; justify-content:space-between; width:100%;">
-            <span>J&H Fixall</span>
-            <span>Confidential Property Report</span>
-            <span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span>
+        <div style="width:100%; font-size:8px; color:#6b7280; padding:0 8mm;">
+          <div style="width:100%; position:relative; height:12px;">
+            <div style="position:absolute; left:0;">J&amp;H Fixall</div>
+            <div style="position:absolute; left:50%; transform:translateX(-50%);">Confidential Property Report</div>
+            <div style="position:absolute; right:0;">
+              Page <span class="pageNumber"></span> of <span class="totalPages"></span>
+            </div>
           </div>
         </div>
       `,
