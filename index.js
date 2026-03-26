@@ -14,6 +14,33 @@ app.get("/health", (_req, res) => {
   });
 });
 
+// ✅ ADD THIS TEST ROUTE BACK
+app.get("/test-pdf", async (_req, res) => {
+  try {
+    const html = `
+      <html>
+        <body>
+          <h1>PDF Test Page</h1>
+          <p>This should show header, footer, and page numbers.</p>
+          <div style="height:1200px;"></div>
+        </body>
+      </html>
+    `;
+
+    const pdf = await buildPdfFromHtml(html);
+
+    res.set({
+      "Content-Type": "application/pdf",
+      "Content-Disposition": 'attachment; filename="test.pdf"'
+    });
+
+    return res.send(pdf);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).send("Test PDF failed");
+  }
+});
+
 async function launchBrowser() {
   const executablePath = await chromium.executablePath();
 
@@ -26,7 +53,7 @@ async function launchBrowser() {
   });
 }
 
-async function buildPdfFromHtml(html, pdfOptions = {}) {
+async function buildPdfFromHtml(html) {
   let browser;
 
   try {
@@ -46,49 +73,27 @@ async function buildPdfFromHtml(html, pdfOptions = {}) {
 
     await page.emulateMediaType("print");
 
-    // Wait for images & fonts
-    await page.evaluate(async () => {
-      const images = Array.from(document.images || []);
-      await Promise.all(
-        images.map((img) => {
-          if (img.complete) return Promise.resolve();
-          return new Promise((resolve) => {
-            img.onload = resolve;
-            img.onerror = resolve;
-          });
-        })
-      );
-
-      if (document.fonts?.ready) {
-        await document.fonts.ready;
-      }
-    });
-
     const pdf = await page.pdf({
       format: "Letter",
       printBackground: true,
-      preferCSSPageSize: false,
-
       displayHeaderFooter: true,
 
       headerTemplate: `
-        <div style="width:100%; font-size:8px; padding:0 8mm; color:#6b7280;">
-          <div style="display:flex; justify-content:space-between; width:100%;">
-            <span>198 Country Club Drive</span>
+        <div style="width:100%; font-size:8px; padding:0 8mm;">
+          <div style="display:flex; justify-content:space-between;">
+            <span>Test Address</span>
             <span>Guardian Living Home Record</span>
-            <span>Prepared for: Jeremy Tresler</span>
+            <span>Client Name</span>
           </div>
         </div>
       `,
 
       footerTemplate: `
-        <div style="width:100%; font-size:8px; padding:0 8mm; color:#6b7280;">
-          <div style="display:flex; justify-content:space-between; width:100%;">
+        <div style="width:100%; font-size:8px; padding:0 8mm;">
+          <div style="display:flex; justify-content:space-between;">
             <span>J&H Fixall</span>
-            <span>Confidential Property Report</span>
-            <span>
-              Page <span class="pageNumber"></span> of <span class="totalPages"></span>
-            </span>
+            <span>Confidential</span>
+            <span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span>
           </div>
         </div>
       `,
@@ -98,53 +103,16 @@ async function buildPdfFromHtml(html, pdfOptions = {}) {
         right: "8mm",
         bottom: "20mm",
         left: "8mm"
-      },
-
-      timeout: 120000
+      }
     });
 
     return pdf;
   } finally {
     if (browser) {
-      try {
-        await browser.close();
-      } catch (err) {
-        console.error("BROWSER CLOSE ERROR:", err?.message || err);
-      }
+      await browser.close();
     }
   }
 }
-
-app.post("/generate-pdf", async (req, res) => {
-  try {
-    const { html } = req.body || {};
-
-    if (!html || typeof html !== "string") {
-      return res.status(400).json({
-        error: "Missing html payload"
-      });
-    }
-
-    console.log("PDF REQUEST RECEIVED. HTML LENGTH:", html.length);
-
-    const pdf = await buildPdfFromHtml(html);
-
-    console.log("PDF GENERATED SUCCESSFULLY. BYTES:", pdf.length);
-
-    res.set({
-      "Content-Type": "application/pdf",
-      "Content-Disposition": 'attachment; filename="inspection-report.pdf"',
-      "Cache-Control": "no-store"
-    });
-
-    return res.send(pdf);
-  } catch (err) {
-    console.error("PDF GENERATION FAILED:", err?.stack || err);
-    return res.status(500).json({
-      error: "PDF generation failed"
-    });
-  }
-});
 
 app.listen(PORT, () => {
   console.log(`PDF service running on port ${PORT}`);
