@@ -82,11 +82,20 @@ async function buildPdfFromHtml(html) {
     const pdf = await page.pdf({
       format: "Letter",
       printBackground: true,
-      preferCSSPageSize: true,
+      preferCSSPageSize: false,
+      displayHeaderFooter: true,
+      headerTemplate: `<div></div>`,
+      footerTemplate: `
+        <div style="width:100%; font-size:8px; color:#6b7280; padding:0 8mm;">
+          <div style="width:100%; text-align:center;">
+            Page <span class="pageNumber"></span> of <span class="totalPages"></span>
+          </div>
+        </div>
+      `,
       margin: {
         top: "10mm",
         right: "8mm",
-        bottom: "14mm",
+        bottom: "20mm",
         left: "8mm"
       },
       timeout: 120000
@@ -142,7 +151,7 @@ app.get("/test-pdf", async (_req, res) => {
       <html>
         <head>
           <meta charset="utf-8" />
-          <title>Guardian PDF Test</title>
+          <title>Guardian PDF Page Number Test</title>
           <style>
             @page {
               size: Letter;
@@ -167,15 +176,20 @@ app.get("/test-pdf", async (_req, res) => {
               break-inside: avoid;
               page-break-inside: avoid;
             }
+
+            .spacer {
+              height: 1200px;
+            }
           </style>
         </head>
         <body>
-          <h1>Guardian PDF Test</h1>
+          <h1>Guardian PDF Page Number Test</h1>
           <div class="box">
-            If this downloads as a proper PDF, Puppeteer is working on Render.
+            This should show page numbers in the footer.
           </div>
+          <div class="spacer"></div>
           <div class="box">
-            Next step is testing your real inspection report HTML through /generate-pdf.
+            This should be page 2.
           </div>
         </body>
       </html>
