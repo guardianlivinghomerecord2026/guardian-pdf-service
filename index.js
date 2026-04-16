@@ -12,21 +12,23 @@ app.get("/health", (_req, res) => {
   res.status(200).json({ ok: true });
 });
 
-//
-// 🔥 IMAGE PROXY (THIS IS THE FIX)
-//
+// 🔥 IMAGE PROXY (REQUIRED)
 app.get("/image-proxy", async (req, res) => {
   try {
     const { url } = req.query;
+    if (!url) return res.status(400).send("Missing url");
 
-    if (!url) {
-      return res.status(400).send("Missing url");
-    }
+    console.log("IMAGE PROXY HIT:", url);
 
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "image/avif,image/webp,image/*,*/*;q=0.8"
+      }
+    });
 
     if (!response.ok) {
-      console.error("IMAGE FETCH FAILED:", url);
+      console.error("IMAGE FETCH FAILED:", response.status, url);
       return res.status(500).send("Failed to fetch image");
     }
 
@@ -80,6 +82,7 @@ async function addPageNumbers(pdfBytes) {
   return Buffer.from(bytes);
 }
 
+// 🔥 FINAL PDF BUILDER (FIXED HTML ACCESS)
 async function buildPdf(html, headerTemplate, footerTemplate, options = {}) {
   let browser;
 
@@ -91,7 +94,22 @@ async function buildPdf(html, headerTemplate, footerTemplate, options = {}) {
     await page.setDefaultTimeout(120000);
 
     if (options.html_url) {
-      await page.goto(options.html_url, {
+      console.log("FETCHING HTML:", options.html_url);
+
+      const response = await fetch(options.html_url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0",
+          "Accept": "text/html"
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch HTML: ${response.status}`);
+      }
+
+      const htmlContent = await response.text();
+
+      await page.setContent(htmlContent, {
         waitUntil: "domcontentloaded",
         timeout: options.timeout || 120000
       });
@@ -102,9 +120,7 @@ async function buildPdf(html, headerTemplate, footerTemplate, options = {}) {
       });
     }
 
-    //
-    // 🔥 FIXED IMAGE WAIT (handles proxy + slow loads)
-    //
+    // 🔥 WAIT FOR IMAGES TO ACTUALLY LOAD
     await page.waitForFunction(() => {
       const imgs = Array.from(document.images);
       return imgs.every(img => img.complete && img.naturalHeight !== 0);
@@ -114,7 +130,6 @@ async function buildPdf(html, headerTemplate, footerTemplate, options = {}) {
       format: "Letter",
       printBackground: true,
       displayHeaderFooter: true,
-      timeout: options.timeout || 120000,
 
       headerTemplate:
         headerTemplate ||
@@ -139,6 +154,10 @@ async function buildPdf(html, headerTemplate, footerTemplate, options = {}) {
     });
 
     return await addPageNumbers(pdf);
+
+  } catch (err) {
+    console.error("PDF BUILD ERROR:", err);
+    throw err;
   } finally {
     if (browser) await browser.close();
   }
@@ -146,7 +165,7 @@ async function buildPdf(html, headerTemplate, footerTemplate, options = {}) {
 
 app.post("/generate-pdf", async (req, res) => {
   try {
-    const { html, html_url, headerTemplate, footerTemplate, waitUntil, timeout } = req.body || {};
+    const { html, html_url, headerTemplate, footerTemplate, timeout } = req.body || {};
 
     if ((!html || typeof html !== "string") && !html_url) {
       return res.status(400).json({ error: "Missing html or html_url payload" });
@@ -154,7 +173,6 @@ app.post("/generate-pdf", async (req, res) => {
 
     const pdf = await buildPdf(html, headerTemplate, footerTemplate, {
       html_url,
-      waitUntil,
       timeout
     });
 
@@ -165,9 +183,10 @@ app.post("/generate-pdf", async (req, res) => {
     });
 
     return res.send(pdf);
+
   } catch (err) {
     console.error("PDF GENERATION FAILED:", err?.stack || err);
-    return res.status(500).json({ error: "PDF generation failed" });
+    return res.status(500).json({ error: err.message || "PDF generation failed" });
   }
 });
 
