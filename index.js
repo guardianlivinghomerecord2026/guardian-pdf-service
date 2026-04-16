@@ -12,7 +12,7 @@ app.get("/health", (_req, res) => {
   res.status(200).json({ ok: true });
 });
 
-// 🔥 IMAGE PROXY (REQUIRED)
+// 🔥 IMAGE PROXY
 app.get("/image-proxy", async (req, res) => {
   try {
     const { url } = req.query;
@@ -40,6 +40,7 @@ app.get("/image-proxy", async (req, res) => {
     });
 
     return res.send(Buffer.from(buffer));
+
   } catch (err) {
     console.error("IMAGE PROXY ERROR:", err);
     return res.status(500).send("Proxy error");
@@ -82,7 +83,6 @@ async function addPageNumbers(pdfBytes) {
   return Buffer.from(bytes);
 }
 
-// 🔥 FINAL PDF BUILDER (FIXED HTML ACCESS)
 async function buildPdf(html, headerTemplate, footerTemplate, options = {}) {
   let browser;
 
@@ -93,6 +93,7 @@ async function buildPdf(html, headerTemplate, footerTemplate, options = {}) {
     await page.setDefaultNavigationTimeout(120000);
     await page.setDefaultTimeout(120000);
 
+    // 🔥 FIX: fetch HTML instead of direct navigation
     if (options.html_url) {
       console.log("FETCHING HTML:", options.html_url);
 
@@ -113,6 +114,7 @@ async function buildPdf(html, headerTemplate, footerTemplate, options = {}) {
         waitUntil: "domcontentloaded",
         timeout: options.timeout || 120000
       });
+
     } else {
       await page.setContent(html, {
         waitUntil: "domcontentloaded",
@@ -120,11 +122,19 @@ async function buildPdf(html, headerTemplate, footerTemplate, options = {}) {
       });
     }
 
-    // 🔥 WAIT FOR IMAGES TO ACTUALLY LOAD
+    // 🔥 FINAL FIX: wait for MOST images, not ALL
     await page.waitForFunction(() => {
       const imgs = Array.from(document.images);
-      return imgs.every(img => img.complete && img.naturalHeight !== 0);
-    }, { timeout: 60000 });
+
+      if (imgs.length === 0) return true;
+
+      const loaded = imgs.filter(img =>
+        img.complete && img.naturalHeight > 0
+      );
+
+      return (loaded.length / imgs.length) > 0.9;
+
+    }, { timeout: 45000 });
 
     const pdf = await page.pdf({
       format: "Letter",
@@ -158,6 +168,7 @@ async function buildPdf(html, headerTemplate, footerTemplate, options = {}) {
   } catch (err) {
     console.error("PDF BUILD ERROR:", err);
     throw err;
+
   } finally {
     if (browser) await browser.close();
   }
