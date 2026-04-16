@@ -48,7 +48,7 @@ async function addPageNumbers(pdfBytes) {
   return Buffer.from(bytes);
 }
 
-// ✅ UPDATED: accepts options from request
+// ✅ UPDATED: supports html_url + fallback
 async function buildPdf(html, headerTemplate, footerTemplate, options = {}) {
   let browser;
 
@@ -56,15 +56,23 @@ async function buildPdf(html, headerTemplate, footerTemplate, options = {}) {
     browser = await launchBrowser();
     const page = await browser.newPage();
 
-    // ✅ global timeout safety
+    // global timeout safety
     await page.setDefaultNavigationTimeout(120000);
     await page.setDefaultTimeout(120000);
 
-    // ✅ USE FRONTEND-CONTROLLED SETTINGS
-    await page.setContent(html, {
-      waitUntil: options.waitUntil || "networkidle0",
-      timeout: options.timeout || 120000
-    });
+    // 🔥 NEW: url-direct mode (primary)
+    if (options.html_url) {
+      await page.goto(options.html_url, {
+        waitUntil: options.waitUntil || "domcontentloaded",
+        timeout: options.timeout || 120000
+      });
+    } else {
+      // fallback to legacy html
+      await page.setContent(html, {
+        waitUntil: options.waitUntil || "domcontentloaded",
+        timeout: options.timeout || 120000
+      });
+    }
 
     const pdf = await page.pdf({
       format: "Letter",
@@ -102,14 +110,16 @@ async function buildPdf(html, headerTemplate, footerTemplate, options = {}) {
 
 app.post("/generate-pdf", async (req, res) => {
   try {
-    // ✅ NOW ACCEPT waitUntil + timeout FROM FRONTEND
-    const { html, headerTemplate, footerTemplate, waitUntil, timeout } = req.body || {};
+    // 🔥 UPDATED: now accepts html_url
+    const { html, html_url, headerTemplate, footerTemplate, waitUntil, timeout } = req.body || {};
 
-    if (!html || typeof html !== "string") {
-      return res.status(400).json({ error: "Missing html payload" });
+    // 🔥 FIX: allow either html OR html_url
+    if ((!html || typeof html !== "string") && !html_url) {
+      return res.status(400).json({ error: "Missing html or html_url payload" });
     }
 
     const pdf = await buildPdf(html, headerTemplate, footerTemplate, {
+      html_url,
       waitUntil,
       timeout
     });
@@ -148,7 +158,6 @@ app.get("/test-pdf", async (_req, res) => {
           <div>Guardian Living Home Record</div>
           <div>Prepared for: Jeremy Tresler</div>
         </div>
-      </div>
       `,
       `<div></div>`
     );
