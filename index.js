@@ -48,27 +48,29 @@ async function addPageNumbers(pdfBytes) {
   return Buffer.from(bytes);
 }
 
-async function buildPdf(html, headerTemplate, footerTemplate) {
+// ✅ UPDATED: accepts options from request
+async function buildPdf(html, headerTemplate, footerTemplate, options = {}) {
   let browser;
 
   try {
     browser = await launchBrowser();
     const page = await browser.newPage();
 
-    // ✅ FIX: increase Puppeteer timeouts
+    // ✅ global timeout safety
     await page.setDefaultNavigationTimeout(120000);
     await page.setDefaultTimeout(120000);
 
+    // ✅ USE FRONTEND-CONTROLLED SETTINGS
     await page.setContent(html, {
-      waitUntil: "networkidle0",
-      timeout: 120000
+      waitUntil: options.waitUntil || "networkidle0",
+      timeout: options.timeout || 120000
     });
 
     const pdf = await page.pdf({
       format: "Letter",
       printBackground: true,
       displayHeaderFooter: true,
-      timeout: 120000,
+      timeout: options.timeout || 120000,
 
       headerTemplate:
         headerTemplate ||
@@ -100,13 +102,17 @@ async function buildPdf(html, headerTemplate, footerTemplate) {
 
 app.post("/generate-pdf", async (req, res) => {
   try {
-    const { html, headerTemplate, footerTemplate } = req.body || {};
+    // ✅ NOW ACCEPT waitUntil + timeout FROM FRONTEND
+    const { html, headerTemplate, footerTemplate, waitUntil, timeout } = req.body || {};
 
     if (!html || typeof html !== "string") {
       return res.status(400).json({ error: "Missing html payload" });
     }
 
-    const pdf = await buildPdf(html, headerTemplate, footerTemplate);
+    const pdf = await buildPdf(html, headerTemplate, footerTemplate, {
+      waitUntil,
+      timeout
+    });
 
     res.set({
       "Content-Type": "application/pdf",
