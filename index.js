@@ -12,16 +12,14 @@ app.get("/health", (_req, res) => {
   res.status(200).json({ ok: true });
 });
 
-// 🔥 HARDENED IMAGE PROXY (NEVER HANGS)
+// 🔥 HARD FAIL-SAFE IMAGE PROXY
 app.get("/image-proxy", async (req, res) => {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 4000);
+  const timeout = setTimeout(() => controller.abort(), 2000); // 🔥 2 SECOND HARD STOP
 
   try {
     const { url } = req.query;
     if (!url) return res.status(400).send("Missing url");
-
-    console.log("IMAGE:", url);
 
     const upstream = await fetch(url, {
       signal: controller.signal,
@@ -33,15 +31,12 @@ app.get("/image-proxy", async (req, res) => {
 
     clearTimeout(timeout);
 
-    if (!upstream.ok) {
-      throw new Error("Bad response");
-    }
+    if (!upstream.ok) throw new Error("bad image");
 
     const buffer = await upstream.arrayBuffer();
 
     res.set({
-      "Content-Type": upstream.headers.get("content-type") || "image/jpeg",
-      "Cache-Control": "public, max-age=31536000"
+      "Content-Type": upstream.headers.get("content-type") || "image/jpeg"
     });
 
     return res.send(Buffer.from(buffer));
@@ -49,13 +44,8 @@ app.get("/image-proxy", async (req, res) => {
   } catch (err) {
     clearTimeout(timeout);
 
-    console.warn("IMAGE FAIL:", req.query.url);
-
-    // 1x1 fallback (never blocks)
-    res.set({
-      "Content-Type": "image/png",
-      "Cache-Control": "no-store"
-    });
+    // 🔥 ALWAYS RETURN SOMETHING (never hang)
+    res.set({ "Content-Type": "image/png" });
 
     return res.send(Buffer.from(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=",
@@ -107,21 +97,11 @@ async function buildPdf(html, headerTemplate, footerTemplate, options = {}) {
     browser = await launchBrowser();
     const page = await browser.newPage();
 
-    await page.setDefaultNavigationTimeout(60000);
-    await page.setDefaultTimeout(60000);
-
-    // 🔥 ALWAYS FETCH HTML (NO ERR_ABORTED)
+    // 🔥 FETCH HTML (no ERR_ABORTED)
     let htmlContent = html;
 
     if (options.html_url) {
-      console.log("FETCH HTML:", options.html_url);
-
-      const response = await fetch(options.html_url, {
-        headers: {
-          "User-Agent": "Mozilla/5.0",
-          "Accept": "text/html"
-        }
-      });
+      const response = await fetch(options.html_url);
 
       if (!response.ok) {
         throw new Error("HTML fetch failed");
@@ -135,9 +115,8 @@ async function buildPdf(html, headerTemplate, footerTemplate, options = {}) {
       timeout: 60000
     });
 
-    // 🔥 CRITICAL FIX: DO NOT WAIT FOR IMAGES
-    // Give browser time to render, then force PDF
-    await page.waitForTimeout(4000);
+    // 🔥 CRITICAL: DO NOT WAIT FOR IMAGES
+    await page.waitForTimeout(3000);
 
     const pdf = await page.pdf({
       format: "Letter",
@@ -146,17 +125,11 @@ async function buildPdf(html, headerTemplate, footerTemplate, options = {}) {
 
       headerTemplate:
         headerTemplate ||
-        `
-        <div style="width:100%; font-size:8px; color:#6b7280; padding:0 10mm;">
-          <div style="display:flex; justify-content:space-between;">
-            <div>Property Address Not Available</div>
-            <div>Guardian Living Home Record</div>
-            <div>Prepared for: Client</div>
-          </div>
-        </div>
-        `,
+        `<div style="font-size:8px; width:100%; text-align:center;">
+          Guardian Living Home Record
+        </div>`,
 
-      footerTemplate: footerTemplate || `<div></div>`,
+      footerTemplate: `<div></div>`,
 
       margin: {
         top: "20mm",
@@ -168,10 +141,6 @@ async function buildPdf(html, headerTemplate, footerTemplate, options = {}) {
 
     return await addPageNumbers(pdf);
 
-  } catch (err) {
-    console.error("PDF BUILD ERROR:", err);
-    throw err;
-
   } finally {
     if (browser) await browser.close();
   }
@@ -181,18 +150,12 @@ app.post("/generate-pdf", async (req, res) => {
   try {
     const { html, html_url, headerTemplate, footerTemplate } = req.body || {};
 
-    if ((!html || typeof html !== "string") && !html_url) {
-      return res.status(400).json({ error: "Missing html or html_url payload" });
-    }
-
     const pdf = await buildPdf(html, headerTemplate, footerTemplate, {
       html_url
     });
 
     res.set({
-      "Content-Type": "application/pdf",
-      "Content-Disposition": 'attachment; filename="inspection-report.pdf"',
-      "Cache-Control": "no-store"
+      "Content-Type": "application/pdf"
     });
 
     return res.send(pdf);
