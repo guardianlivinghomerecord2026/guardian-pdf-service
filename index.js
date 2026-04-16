@@ -55,14 +55,20 @@ async function buildPdf(html, headerTemplate, footerTemplate) {
     browser = await launchBrowser();
     const page = await browser.newPage();
 
+    // ✅ FIX: increase Puppeteer timeouts
+    await page.setDefaultNavigationTimeout(120000);
+    await page.setDefaultTimeout(120000);
+
     await page.setContent(html, {
-      waitUntil: "networkidle0"
+      waitUntil: "networkidle0",
+      timeout: 120000
     });
 
     const pdf = await page.pdf({
       format: "Letter",
       printBackground: true,
       displayHeaderFooter: true,
+      timeout: 120000,
 
       headerTemplate:
         headerTemplate ||
