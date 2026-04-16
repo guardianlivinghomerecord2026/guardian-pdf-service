@@ -48,7 +48,7 @@ async function addPageNumbers(pdfBytes) {
   return Buffer.from(bytes);
 }
 
-// ✅ UPDATED: supports html_url + fallback
+// ✅ FINAL: supports html_url + smart image waiting
 async function buildPdf(html, headerTemplate, footerTemplate, options = {}) {
   let browser;
 
@@ -56,23 +56,27 @@ async function buildPdf(html, headerTemplate, footerTemplate, options = {}) {
     browser = await launchBrowser();
     const page = await browser.newPage();
 
-    // global timeout safety
     await page.setDefaultNavigationTimeout(120000);
     await page.setDefaultTimeout(120000);
 
-    // 🔥 NEW: url-direct mode (primary)
     if (options.html_url) {
+      // 🔥 FAST LOAD
       await page.goto(options.html_url, {
-        waitUntil: options.waitUntil || "domcontentloaded",
+        waitUntil: "domcontentloaded",
         timeout: options.timeout || 120000
       });
     } else {
-      // fallback to legacy html
       await page.setContent(html, {
-        waitUntil: options.waitUntil || "domcontentloaded",
+        waitUntil: "domcontentloaded",
         timeout: options.timeout || 120000
       });
     }
+
+    // ✅ KEY FIX: wait only for images (NOT full network)
+    await page.waitForFunction(() => {
+      const imgs = Array.from(document.images);
+      return imgs.every(img => img.complete);
+    }, { timeout: 30000 });
 
     const pdf = await page.pdf({
       format: "Letter",
@@ -110,10 +114,8 @@ async function buildPdf(html, headerTemplate, footerTemplate, options = {}) {
 
 app.post("/generate-pdf", async (req, res) => {
   try {
-    // 🔥 UPDATED: now accepts html_url
     const { html, html_url, headerTemplate, footerTemplate, waitUntil, timeout } = req.body || {};
 
-    // 🔥 FIX: allow either html OR html_url
     if ((!html || typeof html !== "string") && !html_url) {
       return res.status(400).json({ error: "Missing html or html_url payload" });
     }
