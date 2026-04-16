@@ -12,6 +12,38 @@ app.get("/health", (_req, res) => {
   res.status(200).json({ ok: true });
 });
 
+//
+// 🔥 IMAGE PROXY (THIS IS THE FIX)
+//
+app.get("/image-proxy", async (req, res) => {
+  try {
+    const { url } = req.query;
+
+    if (!url) {
+      return res.status(400).send("Missing url");
+    }
+
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      console.error("IMAGE FETCH FAILED:", url);
+      return res.status(500).send("Failed to fetch image");
+    }
+
+    const buffer = await response.arrayBuffer();
+
+    res.set({
+      "Content-Type": response.headers.get("content-type") || "image/jpeg",
+      "Cache-Control": "public, max-age=31536000"
+    });
+
+    return res.send(Buffer.from(buffer));
+  } catch (err) {
+    console.error("IMAGE PROXY ERROR:", err);
+    return res.status(500).send("Proxy error");
+  }
+});
+
 async function launchBrowser() {
   const executablePath = await chromium.executablePath();
 
@@ -48,7 +80,6 @@ async function addPageNumbers(pdfBytes) {
   return Buffer.from(bytes);
 }
 
-// ✅ FINAL: supports html_url + smart image waiting
 async function buildPdf(html, headerTemplate, footerTemplate, options = {}) {
   let browser;
 
@@ -60,7 +91,6 @@ async function buildPdf(html, headerTemplate, footerTemplate, options = {}) {
     await page.setDefaultTimeout(120000);
 
     if (options.html_url) {
-      // 🔥 FAST LOAD
       await page.goto(options.html_url, {
         waitUntil: "domcontentloaded",
         timeout: options.timeout || 120000
@@ -72,11 +102,13 @@ async function buildPdf(html, headerTemplate, footerTemplate, options = {}) {
       });
     }
 
-    // ✅ KEY FIX: wait only for images (NOT full network)
+    //
+    // 🔥 FIXED IMAGE WAIT (handles proxy + slow loads)
+    //
     await page.waitForFunction(() => {
       const imgs = Array.from(document.images);
-      return imgs.every(img => img.complete);
-    }, { timeout: 30000 });
+      return imgs.every(img => img.complete && img.naturalHeight !== 0);
+    }, { timeout: 60000 });
 
     const pdf = await page.pdf({
       format: "Letter",
@@ -136,43 +168,6 @@ app.post("/generate-pdf", async (req, res) => {
   } catch (err) {
     console.error("PDF GENERATION FAILED:", err?.stack || err);
     return res.status(500).json({ error: "PDF generation failed" });
-  }
-});
-
-app.get("/test-pdf", async (_req, res) => {
-  try {
-    const html = `
-      <html>
-        <body style="font-family: Arial; padding:20px;">
-          <h1>Page 1</h1>
-          <div style="height:1200px;"></div>
-          <h1>Page 2</h1>
-        </body>
-      </html>
-    `;
-
-    const pdf = await buildPdf(
-      html,
-      `
-      <div style="width:100%; font-size:8px; color:#6b7280; padding:0 10mm;">
-        <div style="display:flex; justify-content:space-between;">
-          <div>198 Country Club Dr, Grass Valley, CA</div>
-          <div>Guardian Living Home Record</div>
-          <div>Prepared for: Jeremy Tresler</div>
-        </div>
-      `,
-      `<div></div>`
-    );
-
-    res.set({
-      "Content-Type": "application/pdf",
-      "Content-Disposition": "attachment; filename=test.pdf"
-    });
-
-    return res.send(pdf);
-  } catch (err) {
-    console.error("TEST PDF FAILED:", err?.stack || err);
-    return res.status(500).send("Test PDF failed");
   }
 });
 
